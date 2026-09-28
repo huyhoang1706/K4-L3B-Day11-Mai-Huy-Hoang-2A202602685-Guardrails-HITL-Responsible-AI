@@ -23,11 +23,14 @@ class AuditLogPlugin:
     def __init__(self):
         self.name = "audit_log"
         self.logs: list[dict] = []
-        self._open: dict[str, float] = {}
+        self._open: dict[str, dict] = {}
 
     def record_input(self, *, user_id: str, text: str, request_id: str | None = None):
         """TODO: store input + start timestamp keyed by request_id/user_id."""
-        raise NotImplementedError("Implement AuditLogPlugin.record_input")
+        self._open[f"{request_id}/{user_id}"] = {
+            "input": text,
+            "started_at": datetime.now(timezone.utc).timestamp()
+        }
 
     def record_output(
         self,
@@ -39,14 +42,29 @@ class AuditLogPlugin:
         request_id: str | None = None,
     ):
         """TODO: store output, layer decision, latency; append to self.logs."""
-        raise NotImplementedError("Implement AuditLogPlugin.record_output")
+        input = self._open.pop(f"{request_id}/{user_id}")
+        input_text = input["input"]
+        now = datetime.now(timezone.utc).timestamp()
+        input_ts = input["started_at"]
+        latency = f"{(now - input_ts) * 1000:.2f} ms"
+
+        self.logs.append({
+            "input": input_text,
+            "output": text,
+            "user_id": user_id,
+            "request_id": request_id,
+            "blocked": blocked,
+            "layer": layer,
+            "latency": latency
+        })
 
     def export_json(self, filepath: str | None = None):
         """Write logs to disk (JSON array) under repo-root ``outputs/`` by default."""
-        # TODO: path = filepath or default_audit_log_path()
-        #       ensure parent dirs exist, dump self.logs with indent=2
-        _ = filepath or default_audit_log_path()
-        raise NotImplementedError("Implement AuditLogPlugin.export_json")
+        file_path = Path(filepath or default_audit_log_path())
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with file_path.open("w", encoding="utf-8") as f:
+            json.dump(self.logs, f, indent=2, ensure_ascii=False)
 
 
 def utc_now_iso() -> str:
